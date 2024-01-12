@@ -1,92 +1,36 @@
 const express = require('express');
-const bodyParser = require('body-parser');
-const africastalking = require('africastalking');
-const helmet = require('helmet');
-const cors = require('cors');
-const rateLimit = require('express-rate-limit');
+const cron = require('node-cron');
+const nodemailer = require('nodemailer');
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = 3000;
 
-// Set up Africa's Talking credentials from environment variables
-const username = process.env.AT_USERNAME || 'default-username';
-const apiKey = process.env.AT_API_KEY || 'default-api-key';
+// Create a nodemailer transporter (replace with your email configuration)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'your-email@gmail.com',
+    pass: 'your-email-password',
+  },
+});
 
-const africastalkingOptions = {
-  apiKey,
-  username,
+// Define the email content
+const mailOptions = {
+  from: 'your-email@gmail.com',
+  to: 'recipient-email@example.com',
+  subject: 'Automatic Email',
+  text: 'This is an automatic email scheduled for Fridays at 5 PM.',
 };
 
-const africastalkingInstance = africastalking(africastalkingOptions);
-const payments = africastalkingInstance.PAYMENTS;
-
-// In-memory database for storing user transactions (replace with a database in production)
-const transactionsDatabase = [];
-
-// Middleware for security headers
-app.use(helmet());
-
-// Middleware for handling CORS
-app.use(cors());
-
-// Middleware to parse JSON requests
-app.use(bodyParser.json());
-
-// Rate limiting middleware
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-});
-
-app.use(limiter);
-
-// Route to handle USSD payment
-app.post('/ussd-payment', (req, res) => {
-  const { sessionId, phoneNumber, text } = req.body;
-
-  // Parse the text received from the USSD service
-  const userInput = text.split('*');
-
-  // Assuming that the last digit entered is the payment amount
-  const paymentAmount = parseFloat(userInput[userInput.length - 1]);
-
-  // Perform payment using Africa's Talking Payment API
-  payments.mobileCheckout({
-    productName: 'YourProduct',
-    phoneNumber,
-    currencyCode: 'USD', // Use the appropriate currency code
-    amount: paymentAmount,
-    metadata: {
-      custom_field: 'value',
-    },
-  }).then(response => {
-    console.log(response);
-
-    // Save transaction details to the database
-    const transactionDetails = {
-      transactionId: response.transactionId,
-      phoneNumber,
-      amount: paymentAmount,
-      status: 'completed',
-      timestamp: new Date(),
-    };
-    transactionsDatabase.push(transactionDetails);
-
-    res.send('Payment successful');
-  }).catch(error => {
-    console.error(error);
-    res.send('Payment failed');
+// Schedule the email to be sent every Friday at 5 PM
+cron.schedule('0 17 * * 5', () => {
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.error('Error sending email:', error);
+    } else {
+      console.log('Email sent:', info.response);
+    }
   });
-});
-
-// Route to fetch transaction history
-app.get('/transaction-history/:phoneNumber', (req, res) => {
-  const phoneNumber = req.params.phoneNumber;
-
-  // Filter transactions for the given phone number
-  const userTransactions = transactionsDatabase.filter(transaction => transaction.phoneNumber === phoneNumber);
-
-  res.json(userTransactions);
 });
 
 // Start the server
